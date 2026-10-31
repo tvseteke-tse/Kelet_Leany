@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>Dél-Alföldi Amatőr Egyéni Tekeranglista Verseny - Élő Ranglista</title>
+<style>
+    * { box-sizing: border-box; }
+    html, body { 
+        width: 1920px; 
+        height: 1080px; 
+        margin: 0; 
+        padding: 15px; 
+        overflow: hidden; 
+        background-color: #00122e; 
+        color: #ffff00; 
+        font-family: 'Segoe UI', Arial, sans-serif; 
+        user-select: none; 
+    }
+    
+    .board-container { 
+        width: 100%; 
+        height: 100%; 
+        margin: 0 auto; 
+        background: #001c47; 
+        border: 3px solid #0044aa; 
+        border-radius: 12px; 
+        padding: 20px; 
+        box-shadow: 0 0 30px rgba(0, 50, 150, 0.6); 
+        display: flex; 
+        flex-direction: column;
+        overflow: hidden;
+    }
+    
+    .category-tabs { display: flex; gap: 10px; justify-content: center; margin-bottom: 15px; flex-wrap: wrap; flex-shrink: 0; }
+    .cat-tab { 
+        background: #002b66; color: #ffffff; border: 1px solid #0044aa; padding: 8px 22px; 
+        font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 1.1rem; transition: all 0.2s;
+    }
+    .cat-tab.active { background: #0055ff; color: #ffff00; border-color: #ffff00; text-shadow: 0 0 5px rgba(255,255,0,0.5); box-shadow: 0 0 10px rgba(0,85,255,0.5); }
+
+    h1 { text-align: center; margin: 0 0 15px 0; font-size: 2.2rem; color: #ffff00; letter-spacing: 2px; text-transform: uppercase; text-shadow: 0 0 10px rgba(255, 255, 0, 0.4); flex-shrink: 0; }
+    
+    /* Oszlopok elrendezése */
+    .tables-wrapper {
+        display: flex;
+        gap: 20px;
+        width: 100%;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .table-column {
+        flex: 1;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-family: 'Courier New', Courier, monospace; table-layout: fixed; }
+    th { color: #ffff00; border-bottom: 2px solid #0044aa; padding: 9px 4px; font-size: 1.1rem; white-space: nowrap; }
+    td { padding: 9px 4px; text-align: center; border-bottom: 1px solid #002b66; font-size: 1.15rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    .rank-col { width: 50px; color: #ffffff; text-align: center; overflow: visible !important; text-overflow: clip !important; }
+    .name-col { text-align: left; font-family: sans-serif; color: #ffff00; width: 220px; }
+    .stat-col { color: #8b949e; font-size: 1.15rem; }
+    
+    .color-green { color: #00ff66 !important; text-shadow: 0 0 5px rgba(0, 255, 102, 0.4); }
+    .color-yellow { color: #ffff00 !important; text-shadow: 0 0 5px rgba(255, 255, 0, 0.4); }
+    .color-red { color: #ff3333 !important; text-shadow: 0 0 5px rgba(255, 51, 51, 0.4); }
+
+    .total-col { font-weight: bold; font-size: 1.3rem; }
+    tr.top3 { background-color: rgba(0, 68, 170, 0.4); }
+    tr.top3 .rank-col { color: #ffff00; font-size: 1.25rem; }
+</style>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<div class="board-container">
+    <div class="category-tabs" id="tabsContainer"></div>
+
+    <h1 id="boardTitle">Dél-Alföldi Amatőr Egyéni Tekeranglista Verseny.</h1>
+    
+    <div class="tables-wrapper" id="tablesWrapper">
+        <!-- Az oszlopok dinamikusan generálódnak JS-ből -->
+    </div>
+</div>
+
+<script>
+const firebaseConfig = {
+    apiKey: "aizasyd8o7xyctxtjlqcm8z-29xtbopbxrybjom",
+    authDomain: "teke-eredmenyek.firebaseapp.com",
+    databaseURL: "https://teke-eredmenyek-default-rtdb.firebaseio.com",
+    projectId: "teke-eredmenyek",
+    storageBucket: "teke-eredmenyek.appspot.com"
+};
+
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let activeCatId = '';
+let categories = [];
+let categoriesData = {};
+
+db.ref('karikupa_egyeni').on('value', (snapshot) => {
+    const val = snapshot.val();
+    if (val) {
+        categories = val.categories || [];
+        categoriesData = val.data || {};
+
+        if (categories.length > 0) {
+            if (!activeCatId || !categories.find(c => c.id === activeCatId)) {
+                activeCatId = categories[0].id;
+            }
+        }
+        renderCategoryTabs();
+        renderCurrentCategory();
+    }
+});
+
+function renderCategoryTabs() {
+    const container = document.getElementById('tabsContainer');
+    container.innerHTML = '';
+    categories.forEach(cat => {
+        const btnEl = document.createElement('button');
+        btnEl.className = `cat-tab ${cat.id === activeCatId ? 'active' : ''}`;
+        btnEl.innerText = cat.name;
+        btnEl.onclick = () => switchCategory(cat.id);
+        container.appendChild(btnEl);
+    });
+}
+
+function switchCategory(catId) {
+    activeCatId = catId;
+    renderCategoryTabs();
+    renderCurrentCategory();
+}
+
+function getTotalColorClass(val) {
+    if (val === 0) return '';
+    if (val > 600) return 'color-green';
+    if (val < 500) return 'color-red';
+    return 'color-yellow';
+}
+
+function getUresColorClass(val) {
+    if (val === 0) return 'color-green';
+    if (val <= 5) return 'color-yellow';
+    return 'color-red';
+}
+
+function createPlayerRow(player, currentRank) {
+    const tr = document.createElement('tr');
+    if (currentRank <= 3 && player.total > 0) tr.className = 'top3';
+
+    tr.innerHTML = `
+        <td class="rank-col">${currentRank}.</td>
+        <td class="name-col">${player.name || '-'}</td>
+        <td class="stat-col">${player.teli || 0}</td>
+        <td class="stat-col">${player.tarol || 0}</td>
+        <td class="stat-col ${getUresColorClass(player.ures)}">${player.ures || 0}</td>
+        <td class="total-col ${getTotalColorClass(player.total)}">${player.total || 0}</td>
+    `;
+    return tr;
+}
+
+function renderCurrentCategory() {
+    const activeCategoryObj = categories.find(c => c.id === activeCatId);
+    const catName = activeCategoryObj ? activeCategoryObj.name.toLowerCase() : '';
+    
+    // Ha a kategória nevében benne van a "női" kifejezés, 2 oszlopot használunk, egyébként 3-at
+    const numColumns = catName.includes('női') || catName.includes('noi') ? 2 : 3;
+
+    const cat = categoriesData[activeCatId] || { title: 'KARÁCSONY KUPA 2027.', players: [] };
+    document.getElementById('boardTitle').innerText = (cat.title || 'KARÁCSONY KUPA 2027.').toUpperCase();
+
+    const wrapper = document.getElementById('tablesWrapper');
+    wrapper.innerHTML = '';
+
+    // Létrehozzuk a szükséges számú (2 vagy 3) oszlopot dinamikusan
+    const tbodyElements = [];
+    for (let i = 0; i < numColumns; i++) {
+        const colDiv = document.createElement('div');
+        colDiv.className = 'table-column';
+        colDiv.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th class="rank-col">#</th>
+                        <th class="name-col">Név</th>
+                        <th>Teli</th>
+                        <th>Tarol</th>
+                        <th>Üres</th>
+                        <th class="total-col">Össz.</th>
+                    </tr>
+                </thead>
+                <tbody id="boardBody${i}"></tbody>
+            </table>
+        `;
+        wrapper.appendChild(colDiv);
+        tbodyElements.push(colDiv.querySelector('tbody'));
+    }
+
+    const players = cat.players || [];
+    const sorted = [...players].sort((a, b) => {
+        if (b.total !== a.total) return b.total - a.total;
+        if (b.tarol !== a.tarol) return b.tarol - a.tarol;
+        if (a.ures !== b.ures) return a.ures - b.ures;
+        return 0;
+    });
+
+    const totalPlayers = sorted.length;
+    const itemsPerColumn = Math.ceil(totalPlayers / numColumns);
+
+    let currentRank = 1;
+
+    sorted.forEach((player, index) => {
+        if (index > 0) {
+            const prev = sorted[index - 1];
+            if (player.total !== prev.total || player.tarol !== prev.tarol || player.ures !== prev.ures) {
+                currentRank = index + 1;
+            }
+        }
+
+        const row = createPlayerRow(player, currentRank);
+        
+        // Kiszámoljuk, melyik oszlopba kerüljön a játékos
+        let colIndex = Math.floor(index / itemsPerColumn);
+        if (colIndex >= numColumns) colIndex = numColumns - 1;
+
+        tbodyElements[colIndex].appendChild(row);
+    });
+}
+</script>
+</body>
+</html>

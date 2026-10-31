@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dél-Alföldi Amatőr Egyéni Tekeranglista Verseny - Adminisztráció</title>
+<style>
+    body { font-family: sans-serif; background: #121212; color: white; padding: 15px; margin: 0; }
+    
+    /* Kategóriák sávja */
+    .category-bar { display: flex; gap: 8px; justify-content: center; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: #181818; padding: 10px; border-radius: 8px; border: 1px solid #333; }
+    .cat-tab { 
+        background: #2a2a2a; color: #8b949e; border: 1px solid #444; padding: 8px 16px; 
+        font-weight: bold; border-radius: 6px; cursor: pointer; transition: all 0.2s;
+    }
+    .cat-tab.active { background: #0044aa; color: #ffff00; border-color: #0055ff; box-shadow: 0 0 10px rgba(0,85,255,0.4); }
+
+    .header-panel { margin-bottom: 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .header-panel input {
+        font-size: 1.3rem; padding: 8px 12px; width: 80%; max-width: 500px;
+        background: #2a2a2a; border: 2px solid #3fb950; color: #ffff00;
+        font-weight: bold; border-radius: 6px; text-align: center;
+    }
+    .btn-group { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .btn { background: #0044aa; color: white; border: none; padding: 10px 18px; font-size: 0.95rem; font-weight: bold; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+    .btn:hover { background: #0055ff; }
+    .btn-add { background: #238636; }
+    .btn-add:hover { background: #2ea043; }
+    .btn-danger { background: #da3633; }
+    .btn-danger:hover { background: #f85149; }
+    .btn-cat { background: #6e40c9; }
+    .btn-cat:hover { background: #8957e5; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
+    .card { background: #1e1e1e; padding: 10px; border-radius: 6px; border: 1px solid #333; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: bold; color: #8b949e; }
+    
+    /* Kuka gomb stílusa */
+    .btn-delete-card {
+        background: transparent; border: none; color: #da3633; cursor: pointer; font-size: 1rem;
+        padding: 2px 6px; border-radius: 4px; transition: background 0.2s;
+    }
+    .btn-delete-card:hover { background: rgba(218, 54, 51, 0.2); color: #f85149; }
+
+    .row { display: flex; gap: 5px; align-items: center; margin-bottom: 6px; }
+    input[type="text"].p-name { flex: 1; background: #2a2a2a; border: 1px solid #444; color: white; padding: 6px; border-radius: 4px; font-weight: bold; }
+    input[type="text"].p-team { flex: 1; background: #2a2a2a; border: 1px solid #444; color: #3fb950; padding: 6px; border-radius: 4px; }
+    .stats-inputs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; background: #252525; padding: 6px; border-radius: 4px; }
+    .set-box { display: flex; flex-direction: column; gap: 3px; background: #1a1a1a; padding: 4px; border-radius: 4px; text-align: center; }
+    .set-box label { font-size: 0.75rem; color: #3fb950; font-weight: bold; }
+    .set-box input { width: 90%; background: #2a2a2a; border: 1px solid #444; color: white; padding: 4px 0; text-align: center; border-radius: 3px; font-size: 0.85rem; margin: 0 auto; }
+</style>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<!-- KATEGÓRIÁK FÜLEI ÉS VEZÉRLŐI -->
+<div class="category-bar">
+    <div id="tabsContainer" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+    <button class="btn btn-cat" onclick="addNewCategory()">+ Új Kategória</button>
+    <button class="btn btn-danger" style="padding: 8px 12px; font-size: 0.85rem;" onclick="removeCurrentCategory()">Kategória Törlése</button>
+</div>
+
+<div class="header-panel">
+    <input type="text" id="tournamentTitle" value="Karácsony kupa 2027. - Férfi Egyéni" placeholder="Verseny / Kategória Megnevezése" oninput="sendData()">
+    <div class="btn-group">
+        <button class="btn btn-add" onclick="addPlayer()">+ Új játékos hozzáadása</button>
+        <button class="btn btn-danger" onclick="removeLastPlayer()">Legutolsó játékos törlése</button>
+    </div>
+</div>
+
+<div class="grid" id="playersContainer"></div>
+
+<script>
+const firebaseConfig = {
+    apiKey: "aizasyd8o7xyctxtjlqcm8z-29xtbopbxrybjom",
+    authDomain: "teke-eredmenyek.firebaseapp.com",
+    databaseURL: "https://teke-eredmenyek-default-rtdb.firebaseio.com",
+    projectId: "teke-eredmenyek",
+    storageBucket: "teke-eredmenyek.appspot.com"
+};
+
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let activeCatId = 'kat1';
+let categories = [
+    { id: 'kat1', name: 'Férfi Egyéni' }
+];
+let categoriesData = {
+    kat1: { title: "Karácsony kupa 2027. - Férfi Egyéni", players: [] }
+};
+
+// --- BÖNGÉSZŐ MENTÉS (LOCALSTORAGE) KEZELÉSE ---
+function saveToLocalStorage() {
+    const localPayload = {
+        activeCatId: activeCatId,
+        categories: categories,
+        categoriesData: categoriesData
+    };
+    localStorage.setItem('karakupa_admin_draft', JSON.stringify(localPayload));
+}
+
+function loadFromLocalStorage() {
+    const saved = localStorage.getItem('karakupa_admin_draft');
+    if (saved) {
+        try {
+            const parsed = JSON.parse(saved);
+            if (parsed.categories && parsed.categoriesData) {
+                categories = parsed.categories;
+                categoriesData = parsed.categoriesData;
+                activeCatId = parsed.activeCatId || categories[0].id;
+                renderCategoryTabs();
+                loadCategoryUI();
+            }
+        } catch (e) {
+            console.error("Hiba a helyi adatok betöltésekor", e);
+        }
+    }
+}
+
+// 1. Először azonnal betöltjük a helyi mentést (ha van)
+loadFromLocalStorage();
+
+// 2. Majd szinkronizálunk a Firebase adatbázissal
+db.ref('karikupa_egyeni').once('value', (snapshot) => {
+    const data = snapshot.val();
+    if (data && data.categories && data.data) {
+        categories = data.categories;
+        categoriesData = data.data;
+        if (categories.length > 0 && !categories.find(c => c.id === activeCatId)) {
+            activeCatId = categories[0].id;
+        }
+        renderCategoryTabs();
+        loadCategoryUI();
+        saveToLocalStorage();
+    }
+});
+
+function renderCategoryTabs() {
+    const container = document.getElementById('tabsContainer');
+    container.innerHTML = '';
+    categories.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.className = `cat-tab ${cat.id === activeCatId ? 'active' : ''}`;
+        btn.innerText = cat.name;
+        btn.onclick = () => switchCategory(cat.id);
+        container.appendChild(btn);
+    });
+}
+
+function addNewCategory() {
+    const catName = prompt("Add meg az új kategória nevét (pl. Női, Ifjúsági, Senior):");
+    if (!catName || catName.trim() === "") return;
+
+    const newId = 'kat_' + Date.now();
+    categories.push({ id: newId, name: catName.trim() });
+    categoriesData[newId] = {
+        title: `Karácsony kupa 2027. - ${catName.trim()}`,
+        players: []
+    };
+
+    activeCatId = newId;
+    renderCategoryTabs();
+    loadCategoryUI();
+    addPlayerCardUI(1, {}, true);
+    sendData();
+}
+
+function removeCurrentCategory() {
+    if (categories.length <= 1) {
+        alert("Legalább egy kategóriának maradnia kell!");
+        return;
+    }
+    if (!confirm("Biztosan törölni szeretnéd ezt a kategóriát a hozzá tartozó adatokkal együtt?")) return;
+
+    categories = categories.filter(c => c.id !== activeCatId);
+    delete categoriesData[activeCatId];
+    activeCatId = categories[0].id;
+
+    renderCategoryTabs();
+    loadCategoryUI();
+    sendData();
+}
+
+function switchCategory(catId) {
+    activeCatId = catId;
+    renderCategoryTabs();
+    loadCategoryUI();
+    saveToLocalStorage();
+}
+
+function loadCategoryUI() {
+    const container = document.getElementById('playersContainer');
+    container.innerHTML = '';
+    
+    const cat = categoriesData[activeCatId] || { title: '', players: [] };
+    document.getElementById('tournamentTitle').value = cat.title || '';
+
+    if (!cat.players || cat.players.length === 0) {
+        addPlayerCardUI(1, {}, false);
+    } else {
+        // Meglévő adatok betöltése csökkenő ID sorrendben, hogy a legmagasabb sorszámú legyen legfelül
+        const sortedPlayers = [...cat.players].sort((a, b) => a.id - b.id);
+        sortedPlayers.forEach(p => {
+            addPlayerCardUI(p.id, p, true); // Felülre szúrja be
+        });
+    }
+}
+
+function addPlayerCardUI(playerNumber, data = {}, prepend = true) {
+    const container = document.getElementById('playersContainer');
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.playerNumber = playerNumber;
+    
+    const teli = data.teli_arr || [0,0,0,0];
+    const tarol = data.tarol_arr || [0,0,0,0];
+    const ures = data.ures_arr || [0,0,0,0];
+
+    card.innerHTML = `
+        <div class="card-header">
+            <span>#${playerNumber} Játékos</span>
+            <button class="btn-delete-card" onclick="removeSpecificCard(this)" title="Játékos törlése">🗑️ Törlés</button>
+        </div>
+        <div class="row">
+            <input type="text" class="p-name" placeholder="Játékos neve" value="${data.name || ''}" oninput="sendData()">
+            <input type="text" class="p-team" placeholder="Csapat / Egyesület" value="${data.team || ''}" oninput="sendData()">
+        </div>
+        <div class="stats-inputs">
+            ${[0,1,2,3].map(s => `
+                <div class="set-box">
+                    <label>S${s+1}</label>
+                    <input type="number" class="p-teli${s}" placeholder="Teli" value="${teli[s] || ''}" oninput="sendData()">
+                    <input type="number" class="p-tarol${s}" placeholder="Tar" value="${tarol[s] || ''}" oninput="sendData()">
+                    <input type="number" class="p-ures${s}" placeholder="Üres" value="${ures[s] || ''}" oninput="sendData()">
+                </div>
+            `).join('')}
+        </div>
+    `;
+    
+    if (prepend && container.firstChild) {
+        container.insertBefore(card, container.firstChild);
+    } else {
+        container.appendChild(card);
+    }
+}
+
+function addPlayer() {
+    const cards = document.querySelectorAll('.card');
+    if (cards.length >= 200) { alert("Elérted a maximum 200 főt!"); return; }
+    
+    let maxNumber = 0;
+    cards.forEach(card => {
+        const num = parseInt(card.dataset.playerNumber) || 0;
+        if (num > maxNumber) maxNumber = num;
+    });
+    
+    const nextNumber = maxNumber + 1;
+    addPlayerCardUI(nextNumber, {}, true);
+    sendData();
+}
+
+function removeLastPlayer() {
+    const container = document.getElementById('playersContainer');
+    if (container.children.length <= 1) { alert("Legalább 1 játékosnak maradnia kell!"); return; }
+    if (!confirm("Biztosan törölni szeretnéd a legutolsó kártyát?")) return;
+    
+    container.removeChild(container.lastChild);
+    sendData();
+}
+
+function removeSpecificCard(button) {
+    const container = document.getElementById('playersContainer');
+    if (container.children.length <= 1) {
+        alert("Legalább 1 játékosnak maradnia kell!");
+        return;
+    }
+    
+    const card = button.closest('.card');
+    if (card) {
+        const playerNameInput = card.querySelector('.p-name').value.trim();
+        const playerNumber = card.dataset.playerNumber;
+        const displayName = playerNameInput ? `"${playerNameInput}"` : `#${playerNumber} játékost`;
+
+        if (confirm(`Biztosan törölni szeretnéd ezt a játékost: ${displayName}?`)) {
+            card.remove();
+            sendData();
+        }
+    }
+}
+
+function sendData() {
+    const title = document.getElementById('tournamentTitle').value;
+    const players = [];
+    const cards = document.querySelectorAll('.card');
+
+    cards.forEach((card) => {
+        const playerNumber = parseInt(card.dataset.playerNumber) || 1;
+        const name = card.querySelector('.p-name').value;
+        const team = card.querySelector('.p-team').value;
+        let totalTeli = 0, totalTarol = 0, totalUres = 0;
+        const sets = [];
+        const teli_arr = [], tarol_arr = [], ures_arr = [];
+
+        for (let s = 0; s < 4; s++) {
+            const t = parseInt(card.querySelector(`.p-teli${s}`).value) || 0;
+            const tr = parseInt(card.querySelector(`.p-tarol${s}`).value) || 0;
+            const u = parseInt(card.querySelector(`.p-ures${s}`).value) || 0;
+
+            teli_arr.push(t); tarol_arr.push(tr); ures_arr.push(u);
+            totalTeli += t; totalTarol += tr; totalUres += u;
+            sets.push(t + tr);
+        }
+
+        players.push({
+            id: playerNumber, name: name || `Játékos ${playerNumber}`, team: team || '-',
+            sets: sets, teli: totalTeli, tarol: totalTarol, ures: totalUres,
+            total: totalTeli + totalTarol,
+            teli_arr: teli_arr, tarol_arr: tarol_arr, ures_arr: ures_arr
+        });
+    });
+
+    players.sort((a, b) => a.id - b.id);
+
+    const currentCatObj = categories.find(c => c.id === activeCatId);
+    if (currentCatObj && title) {
+        currentCatObj.name = title.replace('Karácsony kupa 2027. - ', '');
+        renderCategoryTabs();
+    }
+
+    categoriesData[activeCatId] = { title: title, players: players };
+
+    saveToLocalStorage();
+
+    db.ref('karikupa_egyeni').set({
+        categories: categories,
+        data: categoriesData
+    });
+}
+</script>
+</body>
+</html>
